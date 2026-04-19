@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
     bool ok = false;
     try {
         if (cmd == "summary") {
-            ok = cmd_summary(model, jsonMode);
+            ok = cmd_summary(model, McuHalPath, jsonMode);
 
         } else if (cmd == "parts") {
             std::string filter = args.empty() ? "" : args[0];
