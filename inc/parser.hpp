@@ -24,14 +24,6 @@ struct NetRow {
 };
 
 // ---------------------------------------------------------------------------
-// File discovery
-// ---------------------------------------------------------------------------
-
-// Return the lexicographically latest file in `dir` whose name starts with
-// `prefix` (case-sensitive). Returns empty string if none found.
-std::string findFile(const std::string& dir, const std::string& prefix);
-
-// ---------------------------------------------------------------------------
 // Parsers
 // ---------------------------------------------------------------------------
 

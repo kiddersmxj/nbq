@@ -4,15 +4,19 @@
 #include <iostream>
 #include <std-k.hpp>
 
-inline std::string DataDir;
+// Resolved at startup by InitConfig() via upward .nbq discovery.
+inline std::string NbqDir;       // absolute path to the .nbq directory
+inline std::string PartlistPath; // absolute path to partlist file
+inline std::string NetlistPath;  // absolute path to netlist file
+inline std::string McuHalPath;   // absolute path to mcu_hal.json
 
-const std::string ConfigFilePath = "config.conf";
 int InitConfig();
 
 const std::string ProgramName = "nbq";
 const std::string Version = "1.0.0";
 const std::string UsageNotes = R"(usage: nbq [--json] <command> [args]
 commands:
+    init                      create a new .nbq project in the current directory
     summary                   part and net counts
     parts [filter]            list parts, optional filter on ref/value/device/library/package
     search <term>             search across all parts and net names

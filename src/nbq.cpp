@@ -1,7 +1,11 @@
 #include "../inc/nbq.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
+
+namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,13 +17,65 @@ static void dieUsage(const std::string& msg = "") {
 }
 
 // ---------------------------------------------------------------------------
+// nbq init
+// ---------------------------------------------------------------------------
+
+static int run_init(bool jsonMode) {
+    fs::path nbqDir = fs::current_path() / ".nbq";
+
+    if (fs::exists(nbqDir)) {
+        if (jsonMode) {
+            std::cout << "{\"error\":\"already-exists\",\"path\":\""
+                      << nbqDir.string() << "\"}\n";
+        } else {
+            std::cerr << "error: .nbq already exists: " << nbqDir.string() << "\n";
+        }
+        return EXIT_FAILURE;
+    }
+
+    std::error_code ec;
+    fs::create_directory(nbqDir, ec);
+    if (ec) {
+        std::cerr << "error: cannot create .nbq: " << ec.message() << "\n";
+        return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream f(nbqDir / "config.ini");
+        if (!f) {
+            std::cerr << "error: cannot create .nbq/config.ini\n";
+            return EXIT_FAILURE;
+        }
+        f << "[files]\n"
+          << "partlist = \"./partlist.txt\"\n"
+          << "netlist = \"./netlist.txt\"\n"
+          << "mcu_hal = \"./mcu_hal.json\"\n";
+    }
+
+    {
+        std::ofstream f(nbqDir / "mcu_hal.json");
+        if (!f) {
+            std::cerr << "error: cannot create .nbq/mcu_hal.json\n";
+            return EXIT_FAILURE;
+        }
+        f << "{}\n";
+    }
+
+    if (jsonMode) {
+        std::cout << "{\"status\":\"ok\",\"path\":\""
+                  << nbqDir.string() << "\"}\n";
+    } else {
+        std::cout << "initialized nbq project: " << nbqDir.string() << "\n";
+    }
+
+    return EXIT_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
 int main(int argc, char** argv) {
-
-    // ---- Config ------------------------------------------------------------
-    if (InitConfig() != 0) return EXIT_FAILURE;
 
     // ---- Global flags (getopt for -h / -v only) ----------------------------
     int HelpFlag    = 0;
@@ -49,7 +105,6 @@ int main(int argc, char** argv) {
     if (VersionFlag) { PrintVersion();  return EXIT_SUCCESS; }
 
     // ---- Remaining args: [--json] <command> [args...] ----------------------
-    // argv[optind..] holds everything getopt didn't consume
     std::vector<std::string> args;
     for (int i = optind; i < argc; ++i) args.emplace_back(argv[i]);
 
@@ -66,28 +121,28 @@ int main(int argc, char** argv) {
     const std::string cmd = args[0];
     args.erase(args.begin());   // args now holds command arguments only
 
-    // ---- Load data ---------------------------------------------------------
-    std::string partFile = findFile(DataDir, "Partlist");
-    std::string netFile  = findFile(DataDir, "Netlist");
+    // ---- init runs before project discovery --------------------------------
+    if (cmd == "init") {
+        return run_init(jsonMode);
+    }
 
-    if (partFile.empty() && netFile.empty()) {
-        std::cerr << "error: no partlist* or netlist* files found in: "
-                  << DataDir << "\n";
+    // ---- Config (requires .nbq project to exist) ---------------------------
+    if (InitConfig() != 0) return EXIT_FAILURE;
+
+    // ---- Load data ---------------------------------------------------------
+    if (!fs::exists(PartlistPath)) {
+        std::cerr << "error: partlist not found: " << PartlistPath << "\n";
         return EXIT_FAILURE;
     }
-    if (partFile.empty()) {
-        std::cerr << "error: no partlist* file found in: " << DataDir << "\n";
-        return EXIT_FAILURE;
-    }
-    if (netFile.empty()) {
-        std::cerr << "error: no netlist* file found in: " << DataDir << "\n";
+    if (!fs::exists(NetlistPath)) {
+        std::cerr << "error: netlist not found: " << NetlistPath << "\n";
         return EXIT_FAILURE;
     }
 
     Model model;
     try {
-        auto parts   = parsePartList(partFile);
-        auto netRows = parseNetList(netFile);
+        auto parts   = parsePartList(PartlistPath);
+        auto netRows = parseNetList(NetlistPath);
         model.build(parts, netRows);
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
