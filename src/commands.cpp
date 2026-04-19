@@ -1,4 +1,5 @@
 #include "../inc/commands.hpp"
+#include "../inc/mcu.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -604,6 +605,206 @@ bool cmd_compare(const Model& m, const std::string& ref1,
         std::cout << "\nonly " << ref2 << " (" << only2.size() << "):\n";
         for (const auto& n : only2) std::cout << "  " << n << "\n";
         if (only2.empty()) std::cout << "  (none)\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// MCU map loading helper — used by cmd_mcu and cmd_signal.
+// Emits an appropriate error and returns false on failure.
+// ---------------------------------------------------------------------------
+
+static bool loadMcuMapForCmd(const std::string& mcuMapFile, McuMap& out,
+                              bool jsonMode) {
+    if (mcuMapFile.empty()) {
+        if (jsonMode) return jsonError("mcu.map not configured");
+        std::cerr << "error: mcu.map not configured\n";
+        return false;
+    }
+    try {
+        out = loadMcuMap(mcuMapFile);
+    } catch (const std::exception& e) {
+        if (jsonMode) return jsonError(e.what());
+        std::cerr << "error: " << e.what() << "\n";
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_mcu
+// ---------------------------------------------------------------------------
+
+bool cmd_mcu(const std::string& mcuMapFile, const std::string& ref,
+             bool jsonMode) {
+    McuMap mcuMap;
+    if (!loadMcuMapForCmd(mcuMapFile, mcuMap, jsonMode)) return false;
+
+    // ---- list all MCU refs ------------------------------------------------
+    if (ref.empty()) {
+        if (jsonMode) {
+            std::cout << "[\n";
+            size_t i = 0;
+            for (const auto& [r, _] : mcuMap) {
+                std::cout << "  " << jsonStr(r);
+                if (++i < mcuMap.size()) std::cout << ",";
+                std::cout << "\n";
+            }
+            std::cout << "]\n";
+        } else {
+            for (const auto& [r, _] : mcuMap)
+                std::cout << r << "\n";
+            if (mcuMap.empty()) std::cout << "(no MCUs defined)\n";
+        }
+        return true;
+    }
+
+    // ---- show signals for one MCU -----------------------------------------
+    auto it = mcuMap.find(ref);
+    if (it == mcuMap.end()) {
+        // Case-insensitive fallback
+        for (const auto& [r, def] : mcuMap) {
+            if (equalsCI(r, ref)) { it = mcuMap.find(r); break; }
+        }
+    }
+    if (it == mcuMap.end()) {
+        if (jsonMode) return jsonError("MCU ref not found: " + ref);
+        std::cerr << "error: MCU ref not found: " << ref << "\n";
+        return false;
+    }
+
+    const McuDef& def = it->second;
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"ref\":" << jsonStr(def.ref) << ",\n"
+                  << "  \"pins\": [\n";
+        for (size_t i = 0; i < def.pins.size(); ++i) {
+            const auto& p = def.pins[i];
+            std::cout << "    {"
+                      << "\"name\":"        << jsonStr(p.name)        << ","
+                      << "\"pad\":"         << jsonStr(p.pad)         << ","
+                      << "\"silicon_pin\":" << jsonStr(p.silicon_pin) << ","
+                      << "\"net\":"         << jsonStr(p.net)
+                      << "}";
+            if (i + 1 < def.pins.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        std::cout << "mcu     : " << def.ref      << "\n"
+                  << "signals : " << def.pins.size() << "\n";
+        for (const auto& p : def.pins) {
+            std::cout << "  " << p.name
+                      << "   pad " << p.pad
+                      << "   (" << p.silicon_pin << ")"
+                      << "   →  " << p.net << "\n";
+        }
+        if (def.pins.empty()) std::cout << "  (no signals defined)\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_signal
+// ---------------------------------------------------------------------------
+
+// Collect all (mcu_ref, pin) pairs sorted by signal name then MCU ref.
+static std::vector<std::pair<std::string, const McuPin*>>
+allSignalsSorted(const McuMap& mcuMap) {
+    std::vector<std::pair<std::string, const McuPin*>> v;
+    for (const auto& [ref, def] : mcuMap)
+        for (const auto& p : def.pins)
+            v.emplace_back(ref, &p);
+    std::stable_sort(v.begin(), v.end(),
+        [](const auto& a, const auto& b) {
+            return a.second->name < b.second->name;
+        });
+    return v;
+}
+
+// Resolve a query against all pins; returns {mcu_ref, pin*} or {""‚ nullptr}.
+// Priority: exact name → exact silicon_pin → exact net → exact pad →
+//           CI name → CI silicon_pin → CI net → CI pad.
+static std::pair<std::string, const McuPin*>
+resolveSignal(const McuMap& mcuMap, const std::string& query) {
+    // Each pass: iterate MCUs in ref order (std::map), pins in definition order.
+    auto tryExact = [&](auto field) -> std::pair<std::string, const McuPin*> {
+        for (const auto& [ref, def] : mcuMap)
+            for (const auto& p : def.pins)
+                if (field(p) == query) return {ref, &p};
+        return {"", nullptr};
+    };
+    auto tryCI = [&](auto field) -> std::pair<std::string, const McuPin*> {
+        for (const auto& [ref, def] : mcuMap)
+            for (const auto& p : def.pins)
+                if (equalsCI(field(p), query)) return {ref, &p};
+        return {"", nullptr};
+    };
+
+    auto name_f  = [](const McuPin& p) -> const std::string& { return p.name;        };
+    auto spin_f  = [](const McuPin& p) -> const std::string& { return p.silicon_pin; };
+    auto net_f   = [](const McuPin& p) -> const std::string& { return p.net;         };
+    auto pad_f   = [](const McuPin& p) -> const std::string& { return p.pad;         };
+
+    if (auto r = tryExact(name_f);  r.second) return r;
+    if (auto r = tryExact(spin_f);  r.second) return r;
+    if (auto r = tryExact(net_f);   r.second) return r;
+    if (auto r = tryExact(pad_f);   r.second) return r;
+    if (auto r = tryCI(name_f);     r.second) return r;
+    if (auto r = tryCI(spin_f);     r.second) return r;
+    if (auto r = tryCI(net_f);      r.second) return r;
+    if (auto r = tryCI(pad_f);      r.second) return r;
+
+    return {"", nullptr};
+}
+
+bool cmd_signal(const std::string& mcuMapFile, const std::string& query,
+                bool jsonMode) {
+    McuMap mcuMap;
+    if (!loadMcuMapForCmd(mcuMapFile, mcuMap, jsonMode)) return false;
+
+    // ---- list all signal names --------------------------------------------
+    if (query.empty()) {
+        auto all = allSignalsSorted(mcuMap);
+        if (jsonMode) {
+            std::cout << "[\n";
+            for (size_t i = 0; i < all.size(); ++i) {
+                std::cout << "  " << jsonStr(all[i].second->name);
+                if (i + 1 < all.size()) std::cout << ",";
+                std::cout << "\n";
+            }
+            std::cout << "]\n";
+        } else {
+            for (const auto& [ref, pin] : all)
+                std::cout << pin->name << "\n";
+            if (all.empty()) std::cout << "(no signals defined)\n";
+        }
+        return true;
+    }
+
+    // ---- resolve one signal -----------------------------------------------
+    auto [foundRef, foundPin] = resolveSignal(mcuMap, query);
+    if (!foundPin) {
+        if (jsonMode) return jsonError("signal not found: " + query);
+        std::cerr << "error: signal not found: " << query << "\n";
+        return false;
+    }
+
+    if (jsonMode) {
+        std::cout << "{"
+                  << "\"mcu\":"         << jsonStr(foundRef)           << ","
+                  << "\"name\":"        << jsonStr(foundPin->name)        << ","
+                  << "\"pad\":"         << jsonStr(foundPin->pad)         << ","
+                  << "\"silicon_pin\":" << jsonStr(foundPin->silicon_pin) << ","
+                  << "\"net\":"         << jsonStr(foundPin->net)
+                  << "}\n";
+    } else {
+        std::cout << "mcu         : " << foundRef             << "\n"
+                  << "name        : " << foundPin->name        << "\n"
+                  << "pad         : " << foundPin->pad         << "\n"
+                  << "silicon_pin : " << foundPin->silicon_pin << "\n"
+                  << "net         : " << foundPin->net         << "\n";
     }
     return true;
 }

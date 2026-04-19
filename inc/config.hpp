@@ -25,6 +25,8 @@ commands:
     pin <ref> <pad>           resolve a pin to its net and peers
     connected <ref>           first-hop connections for every pin
     compare <ref1> <ref2>     shared and differing nets between two parts
+    mcu [ref]                 list MCU refs, or show all mapped signals for <ref>
+    signal [query]            list all signal names, or resolve by name/silicon_pin/net/pad
 options:
     -h / --help               show help and exit
     -v / --version            print version and exit

@@ -36,6 +36,20 @@ bool cmd_connected(const Model& m, const std::string& ref, bool jsonMode);
 bool cmd_compare  (const Model& m, const std::string& ref1,
                    const std::string& ref2, bool jsonMode);
 
+// ---------------------------------------------------------------------------
+// MCU signal mapping commands
+//
+// mcuMapFile: path from config (mcu.map).  Empty → error.
+// ref:        empty → list all MCU refs; non-empty → show signals for that ref.
+// query:      empty → list all signal names; non-empty → resolve by any field.
+// ---------------------------------------------------------------------------
+
+bool cmd_mcu   (const std::string& mcuMapFile, const std::string& ref,
+                bool jsonMode);
+
+bool cmd_signal(const std::string& mcuMapFile, const std::string& query,
+                bool jsonMode);
+
 #endif
 
 // Copyright (c) 2026, Maxamilian Kidd-May

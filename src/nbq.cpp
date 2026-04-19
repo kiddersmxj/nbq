@@ -129,24 +129,30 @@ int main(int argc, char** argv) {
     // ---- Config (requires .nbq project to exist) ---------------------------
     if (InitConfig() != 0) return EXIT_FAILURE;
 
-    // ---- Load data ---------------------------------------------------------
-    if (!fs::exists(PartlistPath)) {
-        std::cerr << "error: partlist not found: " << PartlistPath << "\n";
-        return EXIT_FAILURE;
-    }
-    if (!fs::exists(NetlistPath)) {
-        std::cerr << "error: netlist not found: " << NetlistPath << "\n";
-        return EXIT_FAILURE;
-    }
+    // ---- Load board model (not needed for mcu / signal) --------------------
+    // mcu and signal commands operate solely on McuHalPath from config;
+    // skip the partlist/netlist load for those commands.
+    const bool needsModel = (cmd != "mcu" && cmd != "signal");
 
     Model model;
-    try {
-        auto parts   = parsePartList(PartlistPath);
-        auto netRows = parseNetList(NetlistPath);
-        model.build(parts, netRows);
-    } catch (const std::exception& e) {
-        std::cerr << "error: " << e.what() << "\n";
-        return EXIT_FAILURE;
+    if (needsModel) {
+        if (!fs::exists(PartlistPath)) {
+            std::cerr << "error: partlist not found: " << PartlistPath << "\n";
+            return EXIT_FAILURE;
+        }
+        if (!fs::exists(NetlistPath)) {
+            std::cerr << "error: netlist not found: " << NetlistPath << "\n";
+            return EXIT_FAILURE;
+        }
+
+        try {
+            auto parts   = parsePartList(PartlistPath);
+            auto netRows = parseNetList(NetlistPath);
+            model.build(parts, netRows);
+        } catch (const std::exception& e) {
+            std::cerr << "error: " << e.what() << "\n";
+            return EXIT_FAILURE;
+        }
     }
 
     // ---- Dispatch ----------------------------------------------------------
@@ -186,6 +192,14 @@ int main(int argc, char** argv) {
                 dieUsage("compare requires <ref1> <ref2>"); return EXIT_FAILURE;
             }
             ok = cmd_compare(model, args[0], args[1], jsonMode);
+
+        } else if (cmd == "mcu") {
+            std::string ref = args.empty() ? "" : args[0];
+            ok = cmd_mcu(McuHalPath, ref, jsonMode);
+
+        } else if (cmd == "signal") {
+            std::string query = args.empty() ? "" : args[0];
+            ok = cmd_signal(McuHalPath, query, jsonMode);
 
         } else {
             dieUsage("unknown command: " + cmd);
