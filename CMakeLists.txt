@@ -35,6 +35,7 @@ target_sources(nbq
     PRIVATE src/parser.cpp
     PRIVATE src/model.cpp
     PRIVATE src/commands.cpp
+    PRIVATE src/mcu.cpp
 )
 
 
