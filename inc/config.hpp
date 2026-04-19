@@ -4,22 +4,27 @@
 #include <iostream>
 #include <std-k.hpp>
 
-// Define configuration variables with or without default values using inline
-inline std::vector<std::string> ExampleArray = {};
-inline std::string ExampleString;
-inline bool ExampleBool;
-inline int ExampleInt;
+inline std::string DataDir;
 
 const std::string ConfigFilePath = "config.conf";
-// Function to initialize global configuration variables
 int InitConfig();
 
 const std::string ProgramName = "nbq";
-const std::string Version = "0.0.0";
-const std::string UsageNotes = R"(usage: nbq [ -h/-v ]
+const std::string Version = "1.0.0";
+const std::string UsageNotes = R"(usage: nbq [--json] <command> [args]
+commands:
+    summary                   part and net counts
+    parts [filter]            list parts, optional filter on ref/value/device/library/package
+    search <term>             search across all parts and net names
+    part <ref>                part metadata and pin/net map
+    net <name>                all members of a net
+    pin <ref> <pad>           resolve a pin to its net and peers
+    connected <ref>           first-hop connections for every pin
+    compare <ref1> <ref2>     shared and differing nets between two parts
 options:
-    -h / --help         show help and usage notes
-    -v / --version      print version and exit)";
+    -h / --help               show help and exit
+    -v / --version            print version and exit
+    --json                    output as JSON)";
 
 void Usage();
 void Usage(std::string Message);
@@ -31,5 +36,4 @@ void PrintVersion();
 // All rights reserved.
 
 // This source code is licensed under the MIT license found in the
-// LICENSE file in the root directory of this source tree. 
-
+// LICENSE file in the root directory of this source tree.

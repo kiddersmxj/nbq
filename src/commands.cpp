@@ -1,0 +1,609 @@
+#include "../inc/commands.hpp"
+
+#include <algorithm>
+#include <iostream>
+#include <set>
+#include <sstream>
+
+// ---------------------------------------------------------------------------
+// JSON helpers
+// ---------------------------------------------------------------------------
+
+static std::string jsonStr(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out += '"';
+    for (char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x",
+                                  static_cast<unsigned char>(c));
+                    out += buf;
+                } else {
+                    out += c;
+                }
+        }
+    }
+    out += '"';
+    return out;
+}
+
+// Emit a JSON error object to stdout and return false.
+static bool jsonError(const std::string& msg) {
+    std::cout << "{\"error\":" << jsonStr(msg) << "}\n";
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Case-insensitive helpers
+// ---------------------------------------------------------------------------
+
+static std::string toLower(std::string s) {
+    for (char& c : s) c = static_cast<char>(
+        std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+static bool containsCI(const std::string& haystack, const std::string& needle) {
+    return toLower(haystack).find(toLower(needle)) != std::string::npos;
+}
+
+static bool equalsCI(const std::string& a, const std::string& b) {
+    return toLower(a) == toLower(b);
+}
+
+// ---------------------------------------------------------------------------
+// cmd_summary
+// ---------------------------------------------------------------------------
+
+bool cmd_summary(const Model& m, bool jsonMode) {
+    size_t np = m.parts.size();
+    size_t nn = m.nets.size();
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"parts\": " << np << ",\n"
+                  << "  \"nets\": "  << nn << "\n"
+                  << "}\n";
+    } else {
+        std::cout << "parts : " << np << "\n"
+                  << "nets  : " << nn << "\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_parts
+// ---------------------------------------------------------------------------
+
+// A filter is a refdes prefix query if every character is a letter or '$'.
+// Examples: "R", "IC", "LED", "G$" → prefix match against ref only.
+// Examples: "BNO055", "CHIP" (contains digits or unusual chars) → broad search.
+static bool isRefdesPrefix(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s)
+        if (!std::isalpha(static_cast<unsigned char>(c)) && c != '$')
+            return false;
+    return true;
+}
+
+static bool startsWithCI(const std::string& s, const std::string& prefix) {
+    if (s.size() < prefix.size()) return false;
+    return equalsCI(s.substr(0, prefix.size()), prefix);
+}
+
+bool cmd_parts(const Model& m, const std::string& filter, bool jsonMode) {
+    const bool refdesMode = isRefdesPrefix(filter);
+
+    std::vector<const Part*> matches;
+    for (const auto& [ref, p] : m.parts) {
+        bool hit = filter.empty();
+        if (!hit) {
+            if (refdesMode)
+                hit = startsWithCI(p.ref, filter);
+            else
+                hit = containsCI(p.ref,     filter) ||
+                      containsCI(p.value,   filter) ||
+                      containsCI(p.device,  filter) ||
+                      containsCI(p.library, filter) ||
+                      containsCI(p.package, filter);
+        }
+        if (hit) matches.push_back(&p);
+    }
+
+    if (jsonMode) {
+        std::cout << "[\n";
+        for (size_t i = 0; i < matches.size(); ++i) {
+            const auto& p = *matches[i];
+            std::cout << "  {"
+                      << "\"ref\":"     << jsonStr(p.ref)     << ","
+                      << "\"value\":"   << jsonStr(p.value)   << ","
+                      << "\"device\":"  << jsonStr(p.device)  << ","
+                      << "\"package\":" << jsonStr(p.package) << ","
+                      << "\"library\":" << jsonStr(p.library)
+                      << "}";
+            if (i + 1 < matches.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "]\n";
+    } else {
+        for (const auto* p : matches) {
+            std::cout << p->ref;
+            if (!p->value.empty())  std::cout << "  " << p->value;
+            if (!p->device.empty() && p->device != p->value)
+                                    std::cout << "  " << p->device;
+            if (!p->package.empty()) std::cout << "  [" << p->package << "]";
+            std::cout << "\n";
+        }
+        if (matches.empty()) std::cout << "(no matches)\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_search
+// ---------------------------------------------------------------------------
+
+bool cmd_search(const Model& m, const std::string& term, bool jsonMode) {
+    std::vector<const Part*> partHits;
+    for (const auto& [ref, p] : m.parts) {
+        if (containsCI(p.ref,     term) ||
+            containsCI(p.value,   term) ||
+            containsCI(p.device,  term) ||
+            containsCI(p.library, term) ||
+            containsCI(p.package, term))
+            partHits.push_back(&p);
+    }
+
+    std::vector<const Net*> netHits;
+    for (const auto& [name, n] : m.nets)
+        if (containsCI(name, term)) netHits.push_back(&n);
+
+    if (jsonMode) {
+        std::cout << "{\n  \"parts\": [\n";
+        for (size_t i = 0; i < partHits.size(); ++i) {
+            const auto& p = *partHits[i];
+            std::cout << "    {"
+                      << "\"ref\":"     << jsonStr(p.ref)     << ","
+                      << "\"value\":"   << jsonStr(p.value)   << ","
+                      << "\"device\":"  << jsonStr(p.device)  << ","
+                      << "\"package\":" << jsonStr(p.package) << ","
+                      << "\"library\":" << jsonStr(p.library)
+                      << "}";
+            if (i + 1 < partHits.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ],\n  \"nets\": [\n";
+        for (size_t i = 0; i < netHits.size(); ++i) {
+            std::cout << "    " << jsonStr(netHits[i]->name);
+            if (i + 1 < netHits.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        if (!partHits.empty()) {
+            std::cout << "parts:\n";
+            for (const auto* p : partHits) {
+                std::cout << "  " << p->ref;
+                if (!p->value.empty())  std::cout << "  " << p->value;
+                if (!p->device.empty() && p->device != p->value)
+                                        std::cout << "  " << p->device;
+                std::cout << "\n";
+            }
+        }
+        if (!netHits.empty()) {
+            std::cout << "nets:\n";
+            for (const auto* n : netHits) std::cout << "  " << n->name << "\n";
+        }
+        if (partHits.empty() && netHits.empty())
+            std::cout << "(no matches)\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_part
+// ---------------------------------------------------------------------------
+
+bool cmd_part(const Model& m, const std::string& ref, bool jsonMode) {
+    auto it = m.parts.find(ref);
+    if (it == m.parts.end()) {
+        if (jsonMode) return jsonError("part not found: " + ref);
+        std::cerr << "error: part not found: " << ref << "\n";
+        return false;
+    }
+    const Part& p = it->second;
+
+    std::set<std::string> netSet;
+    auto pit = m.partPins.find(ref);
+    if (pit != m.partPins.end())
+        for (const auto& pe : pit->second) netSet.insert(pe.net);
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"ref\":"       << jsonStr(p.ref)     << ",\n"
+                  << "  \"value\":"     << jsonStr(p.value)   << ",\n"
+                  << "  \"device\":"    << jsonStr(p.device)  << ",\n"
+                  << "  \"package\":"   << jsonStr(p.package) << ",\n"
+                  << "  \"library\":"   << jsonStr(p.library) << ",\n"
+                  << "  \"net_count\":" << netSet.size()      << ",\n"
+                  << "  \"pins\": [\n";
+        if (pit != m.partPins.end()) {
+            const auto& pins = pit->second;
+            for (size_t i = 0; i < pins.size(); ++i) {
+                std::cout << "    {"
+                          << "\"pad\":" << jsonStr(pins[i].pad) << ","
+                          << "\"pin\":" << jsonStr(pins[i].pin) << ","
+                          << "\"net\":" << jsonStr(pins[i].net)
+                          << "}";
+                if (i + 1 < pins.size()) std::cout << ",";
+                std::cout << "\n";
+            }
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        std::cout << "ref     : " << p.ref     << "\n"
+                  << "value   : " << p.value   << "\n"
+                  << "device  : " << p.device  << "\n"
+                  << "package : " << p.package << "\n"
+                  << "library : " << p.library << "\n"
+                  << "nets    : " << netSet.size() << "\n";
+        if (pit != m.partPins.end()) {
+            std::cout << "pins:\n";
+            for (const auto& pe : pit->second) {
+                std::cout << "  pad " << pe.pad;
+                if (!pe.pin.empty() && pe.pin != pe.pad)
+                    std::cout << "  (" << pe.pin << ")";
+                std::cout << "  →  " << pe.net << "\n";
+            }
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_net
+// ---------------------------------------------------------------------------
+
+bool cmd_net(const Model& m, const std::string& name, bool jsonMode) {
+    auto it = m.nets.find(name);
+    if (it == m.nets.end()) {
+        if (jsonMode) return jsonError("net not found: " + name);
+        std::cerr << "error: net not found: " << name << "\n";
+        return false;
+    }
+    const Net& net = it->second;
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"net\":"     << jsonStr(net.name)  << ",\n"
+                  << "  \"members\":" << net.members.size() << ",\n"
+                  << "  \"connections\": [\n";
+        for (size_t i = 0; i < net.members.size(); ++i) {
+            const auto& mb = net.members[i];
+            std::cout << "    {"
+                      << "\"part\":" << jsonStr(mb.part) << ","
+                      << "\"pad\":"  << jsonStr(mb.pad)  << ","
+                      << "\"pin\":"  << jsonStr(mb.pin)
+                      << "}";
+            if (i + 1 < net.members.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        std::cout << "net     : " << net.name << "\n"
+                  << "members : " << net.members.size() << "\n";
+        for (const auto& mb : net.members) {
+            std::cout << "  " << mb.part << "  pad " << mb.pad;
+            if (!mb.pin.empty() && mb.pin != mb.pad)
+                std::cout << "  (" << mb.pin << ")";
+            std::cout << "\n";
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_pin
+// ---------------------------------------------------------------------------
+
+bool cmd_pin(const Model& m, const std::string& ref,
+             const std::string& pad_or_pin, bool jsonMode) {
+    auto pit = m.partPins.find(ref);
+    if (pit == m.partPins.end()) {
+        if (jsonMode) return jsonError("part not found: " + ref);
+        std::cerr << "error: part not found: " << ref << "\n";
+        return false;
+    }
+    const auto& pins = pit->second;
+
+    // Matching priority: exact pad → exact pin → case-insensitive pad → CI pin
+    const PinEntry* found = nullptr;
+    for (const auto& pe : pins) if (pe.pad == pad_or_pin) { found = &pe; break; }
+    if (!found)
+        for (const auto& pe : pins) if (pe.pin == pad_or_pin) { found = &pe; break; }
+    if (!found)
+        for (const auto& pe : pins) if (equalsCI(pe.pad, pad_or_pin)) { found = &pe; break; }
+    if (!found)
+        for (const auto& pe : pins) if (equalsCI(pe.pin, pad_or_pin)) { found = &pe; break; }
+
+    if (!found) {
+        if (jsonMode) return jsonError("pin not found: " + ref + " " + pad_or_pin);
+        std::cerr << "error: pin not found: " << ref << " " << pad_or_pin << "\n";
+        return false;
+    }
+
+    std::vector<NetMember> others;
+    auto nit = m.nets.find(found->net);
+    if (nit != m.nets.end()) {
+        for (const auto& mb : nit->second.members)
+            if (mb.part != ref || mb.pad != found->pad)
+                others.push_back(mb);
+    }
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"part\":" << jsonStr(ref)        << ",\n"
+                  << "  \"pad\":"  << jsonStr(found->pad) << ",\n"
+                  << "  \"pin\":"  << jsonStr(found->pin) << ",\n"
+                  << "  \"net\":"  << jsonStr(found->net) << ",\n"
+                  << "  \"peers\": [\n";
+        for (size_t i = 0; i < others.size(); ++i) {
+            std::cout << "    {"
+                      << "\"part\":" << jsonStr(others[i].part) << ","
+                      << "\"pad\":"  << jsonStr(others[i].pad)  << ","
+                      << "\"pin\":"  << jsonStr(others[i].pin)
+                      << "}";
+            if (i + 1 < others.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        std::cout << "part : " << ref        << "\n"
+                  << "pad  : " << found->pad << "\n";
+        if (!found->pin.empty() && found->pin != found->pad)
+            std::cout << "pin  : " << found->pin << "\n";
+        std::cout << "net  : " << found->net << "\n"
+                  << "peers:\n";
+        for (const auto& mb : others) {
+            std::cout << "  " << mb.part << "  pad " << mb.pad;
+            if (!mb.pin.empty() && mb.pin != mb.pad)
+                std::cout << "  (" << mb.pin << ")";
+            std::cout << "\n";
+        }
+        if (others.empty()) std::cout << "  (none)\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_connected — compact output helpers
+// ---------------------------------------------------------------------------
+
+static constexpr size_t kPeerInlineMax = 6;
+
+static bool isRailNet(const std::string& name) {
+    if (name.empty()) return false;
+    if (name.find("GND") != std::string::npos) return true;
+    if (name[0] == 'V' && name.size() > 1 &&
+        (std::isupper(static_cast<unsigned char>(name[1])) ||
+         std::isdigit(static_cast<unsigned char>(name[1])))) return true;
+    if (std::isdigit(static_cast<unsigned char>(name[0])) &&
+        name.find('V') != std::string::npos) return true;
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_connected
+// ---------------------------------------------------------------------------
+
+bool cmd_connected(const Model& m, const std::string& ref, bool jsonMode) {
+    auto pit = m.partPins.find(ref);
+    if (pit == m.partPins.end()) {
+        if (jsonMode) return jsonError("part not found: " + ref);
+        std::cerr << "error: part not found: " << ref << "\n";
+        return false;
+    }
+
+    struct PinInfo {
+        const PinEntry*          pe;
+        std::vector<std::string> peers;
+        bool                     showPeers;
+    };
+    std::vector<PinInfo> rows;
+    for (const auto& pe : pit->second) {
+        std::vector<std::string> peers;
+        std::set<std::string>    seen;
+        auto nit = m.nets.find(pe.net);
+        if (nit != m.nets.end()) {
+            for (const auto& mb : nit->second.members)
+                if (mb.part != ref && seen.insert(mb.part).second)
+                    peers.push_back(mb.part);
+        }
+        if (peers.empty()) continue;
+        bool elide = isRailNet(pe.net) || peers.size() > kPeerInlineMax;
+        rows.push_back({ &pe, std::move(peers), !elide });
+    }
+
+    if (jsonMode) {
+        std::cout << "{\n  \"part\":" << jsonStr(ref) << ",\n  \"pins\": [\n";
+        for (size_t i = 0; i < rows.size(); ++i) {
+            const auto& r = rows[i];
+            std::cout << "    {"
+                      << "\"pad\":"         << jsonStr(r.pe->pad) << ","
+                      << "\"pin\":"         << jsonStr(r.pe->pin) << ","
+                      << "\"net\":"         << jsonStr(r.pe->net) << ","
+                      << "\"peer_count\":"  << r.peers.size()     << ","
+                      << "\"peers_elided\":" << (r.showPeers ? "false" : "true") << ","
+                      << "\"peers\":[";
+            if (r.showPeers) {
+                for (size_t j = 0; j < r.peers.size(); ++j) {
+                    std::cout << jsonStr(r.peers[j]);
+                    if (j + 1 < r.peers.size()) std::cout << ",";
+                }
+            }
+            std::cout << "]}";
+            if (i + 1 < rows.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        std::cout << "connected: " << ref << "\n";
+        for (const auto& r : rows) {
+            const auto& pe = *r.pe;
+            std::cout << "  pad " << pe.pad;
+            if (!pe.pin.empty() && pe.pin != pe.pad)
+                std::cout << " (" << pe.pin << ")";
+            std::cout << "  →  " << pe.net << "  ";
+            if (r.showPeers) {
+                std::cout << "[" << r.peers.size()
+                          << (r.peers.size() == 1 ? " peer: " : " peers: ");
+                for (size_t j = 0; j < r.peers.size(); ++j) {
+                    std::cout << r.peers[j];
+                    if (j + 1 < r.peers.size()) std::cout << ", ";
+                }
+                std::cout << "]\n";
+            } else {
+                std::cout << "[" << r.peers.size()
+                          << (r.peers.size() == 1 ? " peer]\n" : " peers]\n");
+            }
+        }
+        if (rows.empty()) std::cout << "  (no connected pins)\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_compare
+// ---------------------------------------------------------------------------
+
+bool cmd_compare(const Model& m, const std::string& ref1,
+                 const std::string& ref2, bool jsonMode) {
+    bool ok1 = m.parts.count(ref1), ok2 = m.parts.count(ref2);
+    if (!ok1 || !ok2) {
+        std::string missing = (!ok1 ? ref1 : ref2);
+        if (jsonMode) return jsonError("part not found: " + missing);
+        std::cerr << "error: part not found: " << missing << "\n";
+        return false;
+    }
+
+    // Build net → all PinEntries for each part (preserve pad-sorted order from model)
+    using PinVec = std::vector<PinEntry>;
+    auto buildNetMap = [&](const std::string& ref) -> std::map<std::string, PinVec> {
+        std::map<std::string, PinVec> nm;
+        auto it = m.partPins.find(ref);
+        if (it != m.partPins.end())
+            for (const auto& pe : it->second)
+                nm[pe.net].push_back(pe);   // accumulate all pins per net
+        return nm;
+    };
+
+    auto nm1 = buildNetMap(ref1);
+    auto nm2 = buildNetMap(ref2);
+
+    // Classify nets
+    struct SharedNet {
+        std::string net;
+        PinVec      pins1, pins2;
+        bool        pinDiff;   // true if the two pin sets are not identical
+    };
+    std::vector<SharedNet> shared;
+    std::vector<std::string> only1, only2;
+
+    for (const auto& [net, pv1] : nm1) {
+        if (nm2.count(net)) {
+            const auto& pv2 = nm2.at(net);
+            // pin_diff: compare pad+pin pairs as sorted sets
+            auto sig = [](const PinVec& v) {
+                std::vector<std::pair<std::string,std::string>> s;
+                for (const auto& pe : v) s.emplace_back(pe.pad, pe.pin);
+                std::sort(s.begin(), s.end());
+                return s;
+            };
+            bool diff = (sig(pv1) != sig(pv2));
+            shared.push_back({ net, pv1, pv2, diff });
+        } else {
+            only1.push_back(net);
+        }
+    }
+    for (const auto& [net, _] : nm2)
+        if (!nm1.count(net)) only2.push_back(net);
+
+    // shared is already net-name ordered (std::map iteration)
+    std::sort(only1.begin(), only1.end());
+    std::sort(only2.begin(), only2.end());
+
+    // Helper: render a PinVec as "pad/pin, pad/pin, ..."
+    auto pinList = [](const PinVec& v) -> std::string {
+        std::string s;
+        for (size_t i = 0; i < v.size(); ++i) {
+            if (i) s += ", ";
+            s += v[i].pad;
+            if (!v[i].pin.empty() && v[i].pin != v[i].pad)
+                s += "/" + v[i].pin;
+        }
+        return s;
+    };
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"ref1\":" << jsonStr(ref1) << ",\n"
+                  << "  \"ref2\":" << jsonStr(ref2) << ",\n"
+                  << "  \"shared\": [\n";
+        for (size_t i = 0; i < shared.size(); ++i) {
+            const auto& s = shared[i];
+            std::cout << "    {\"net\":" << jsonStr(s.net) << ","
+                      << "\"pin_diff\":" << (s.pinDiff ? "true" : "false") << ","
+                      << "\"" << ref1 << "\":[";
+            for (size_t j = 0; j < s.pins1.size(); ++j) {
+                std::cout << "{\"pad\":" << jsonStr(s.pins1[j].pad)
+                          << ",\"pin\":" << jsonStr(s.pins1[j].pin) << "}";
+                if (j + 1 < s.pins1.size()) std::cout << ",";
+            }
+            std::cout << "],\"" << ref2 << "\":[";
+            for (size_t j = 0; j < s.pins2.size(); ++j) {
+                std::cout << "{\"pad\":" << jsonStr(s.pins2[j].pad)
+                          << ",\"pin\":" << jsonStr(s.pins2[j].pin) << "}";
+                if (j + 1 < s.pins2.size()) std::cout << ",";
+            }
+            std::cout << "]}";
+            if (i + 1 < shared.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ],\n  \"only_" << ref1 << "\": [";
+        for (size_t i = 0; i < only1.size(); ++i) {
+            std::cout << jsonStr(only1[i]);
+            if (i + 1 < only1.size()) std::cout << ",";
+        }
+        std::cout << "],\n  \"only_" << ref2 << "\": [";
+        for (size_t i = 0; i < only2.size(); ++i) {
+            std::cout << jsonStr(only2[i]);
+            if (i + 1 < only2.size()) std::cout << ",";
+        }
+        std::cout << "]\n}\n";
+    } else {
+        std::cout << "compare: " << ref1 << " vs " << ref2 << "\n\n"
+                  << "shared nets (" << shared.size() << "):\n";
+        for (const auto& s : shared) {
+            std::cout << "  " << s.net << "\n"
+                      << "    " << ref1 << ": " << pinList(s.pins1) << "\n"
+                      << "    " << ref2 << ": " << pinList(s.pins2) << "\n";
+        }
+
+        std::cout << "\nonly " << ref1 << " (" << only1.size() << "):\n";
+        for (const auto& n : only1) std::cout << "  " << n << "\n";
+        if (only1.empty()) std::cout << "  (none)\n";
+
+        std::cout << "\nonly " << ref2 << " (" << only2.size() << "):\n";
+        for (const auto& n : only2) std::cout << "  " << n << "\n";
+        if (only2.empty()) std::cout << "  (none)\n";
+    }
+    return true;
+}

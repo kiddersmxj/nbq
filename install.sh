@@ -6,9 +6,9 @@ fi
 
 mkdir -p build
 
-script -q /dev/null -c "cmake -B build $ARGS -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+script -q -c "cmake -B build $ARGS -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     && cmake --build build && sudo cmake --install build" \
-    | tee ./build/build.log
+    /dev/null | tee ./build/build.log
 
 
 # Copyright (c) 2026, Maxamilian Kidd-May

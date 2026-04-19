@@ -32,6 +32,9 @@ target_compile_features(nbq PUBLIC cxx_std_20)
 target_sources(nbq
     PRIVATE src/nbq.cpp
     PRIVATE src/config.cpp
+    PRIVATE src/parser.cpp
+    PRIVATE src/model.cpp
+    PRIVATE src/commands.cpp
 )
 
 # --- Install nbq.conf and copy to ~/.nbq.conf if it doesn't exist ----------------

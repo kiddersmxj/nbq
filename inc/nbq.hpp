@@ -2,6 +2,9 @@
 #define K_NBQ
 
 #include "config.hpp"
+#include "parser.hpp"
+#include "model.hpp"
+#include "commands.hpp"
 #include <getopt.h>
 
 #endif
@@ -10,5 +13,4 @@
 // All rights reserved.
 
 // This source code is licensed under the MIT license found in the
-// LICENSE file in the root directory of this source tree. 
-
+// LICENSE file in the root directory of this source tree.
