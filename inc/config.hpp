@@ -17,7 +17,7 @@ const std::string Version = "1.0.0";
 const std::string UsageNotes = R"(usage: nbq [--json] <command> [args]
 commands:
     init                      create a new .nbq project in the current directory
-    summary                   part and net counts
+    summary                   board overview: part types, MCUs, power rails, top nets
     parts [filter]            list parts, optional filter on ref/value/device/library/package
     search <term>             search across all parts and net names
     part <ref>                part metadata and pin/net map

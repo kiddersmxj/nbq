@@ -16,7 +16,7 @@
 // and returns false; the caller should exit with EXIT_FAILURE.
 // ---------------------------------------------------------------------------
 
-bool cmd_summary  (const Model& m, bool jsonMode);
+bool cmd_summary  (const Model& m, const std::string& mcuMapFile, bool jsonMode);
 
 bool cmd_parts    (const Model& m, const std::string& filter, bool jsonMode);
 

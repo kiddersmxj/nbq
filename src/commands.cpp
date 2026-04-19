@@ -2,6 +2,7 @@
 #include "../inc/mcu.hpp"
 
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <set>
 #include <sstream>
@@ -64,18 +65,179 @@ static bool equalsCI(const std::string& a, const std::string& b) {
 // cmd_summary
 // ---------------------------------------------------------------------------
 
-bool cmd_summary(const Model& m, bool jsonMode) {
-    size_t np = m.parts.size();
-    size_t nn = m.nets.size();
+bool cmd_summary(const Model& m, const std::string& mcuMapFile, bool jsonMode) {
+    // Part type breakdown by leading-alpha refdes prefix
+    std::map<std::string, std::vector<std::string>> byPrefix;
+    for (const auto& [ref, part] : m.parts) {
+        std::string prefix;
+        for (char c : ref)
+            if (std::isalpha(static_cast<unsigned char>(c))) prefix += c;
+            else break;
+        if (prefix.empty()) prefix = "?";
+        byPrefix[prefix].push_back(ref);
+    }
+
+    // Power/ground rail detection by net name
+    std::vector<std::string> powerRails;
+    for (const auto& [name, net] : m.nets) {
+        std::string up = name;
+        for (char& c : up) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        bool isPower = false;
+        if (up.find("GND") != std::string::npos || up.find("VSS") != std::string::npos)
+            isPower = true;
+        else if (!up.empty() && up[0] == 'V' && up.size() > 1 &&
+                 (std::isupper(static_cast<unsigned char>(up[1])) ||
+                  std::isdigit(static_cast<unsigned char>(up[1]))))
+            isPower = true;
+        else if (!up.empty() && std::isdigit(static_cast<unsigned char>(up[0])) &&
+                 up.find('V') != std::string::npos)
+            isPower = true;
+        if (isPower) powerRails.push_back(name);
+    }
+    std::sort(powerRails.begin(), powerRails.end());
+
+    // Top 5 nets by member count
+    std::vector<std::pair<size_t, std::string>> netsBySize;
+    netsBySize.reserve(m.nets.size());
+    for (const auto& [name, net] : m.nets)
+        netsBySize.push_back({net.members.size(), name});
+    std::sort(netsBySize.begin(), netsBySize.end(),
+              [](const auto& a, const auto& b) {
+                  return a.first != b.first ? a.first > b.first : a.second < b.second;
+              });
+    if (netsBySize.size() > 5) netsBySize.resize(5);
+
+    // Unconnected parts (in partlist but absent from netlist)
+    size_t unconnected = 0;
+    for (const auto& [ref, part] : m.parts)
+        if (m.partPins.find(ref) == m.partPins.end()) ++unconnected;
+
+    // MCU HAL map (optional; silently skip if missing/empty)
+    McuMap mcuMap;
+    if (!mcuMapFile.empty()) {
+        try { mcuMap = loadMcuMap(mcuMapFile); } catch (...) {}
+    }
 
     if (jsonMode) {
-        std::cout << "{\n"
-                  << "  \"parts\": " << np << ",\n"
-                  << "  \"nets\": "  << nn << "\n"
-                  << "}\n";
+        std::cout << "{\n";
+        std::cout << "  \"parts\": " << m.parts.size() << ",\n";
+        std::cout << "  \"nets\": " << m.nets.size() << ",\n";
+
+        // MCUs
+        std::cout << "  \"mcus\": [";
+        if (!mcuMap.empty()) {
+            bool first = true;
+            for (const auto& [ref, def] : mcuMap) {
+                if (!first) std::cout << ",";
+                first = false;
+                std::string value;
+                auto it = m.parts.find(ref);
+                if (it != m.parts.end()) value = it->second.value;
+                std::cout << "\n    {\"ref\": " << jsonStr(ref);
+                if (!value.empty()) std::cout << ", \"value\": " << jsonStr(value);
+                std::cout << ", \"mapped_signals\": " << def.pins.size() << "}";
+            }
+            std::cout << "\n  ";
+        }
+        std::cout << "],\n";
+
+        // Part types
+        std::cout << "  \"part_types\": {";
+        bool firstPt = true;
+        for (const auto& [pfx, refs] : byPrefix) {
+            if (!firstPt) std::cout << ",";
+            firstPt = false;
+            std::cout << "\n    " << jsonStr(pfx) << ": {\"count\": " << refs.size();
+            if (refs.size() <= 5) {
+                std::cout << ", \"refs\": [";
+                for (size_t i = 0; i < refs.size(); ++i) {
+                    if (i) std::cout << ", ";
+                    std::cout << jsonStr(refs[i]);
+                }
+                std::cout << "]";
+            }
+            std::cout << "}";
+        }
+        if (!byPrefix.empty()) std::cout << "\n  ";
+        std::cout << "},\n";
+
+        // Power rails
+        std::cout << "  \"power_rails\": [";
+        for (size_t i = 0; i < powerRails.size(); ++i) {
+            if (i) std::cout << ", ";
+            std::cout << jsonStr(powerRails[i]);
+        }
+        std::cout << "],\n";
+
+        // Top nets
+        std::cout << "  \"top_nets\": [";
+        for (size_t i = 0; i < netsBySize.size(); ++i) {
+            if (i) std::cout << ",";
+            std::cout << "\n    {\"name\": " << jsonStr(netsBySize[i].second)
+                      << ", \"pins\": " << netsBySize[i].first << "}";
+        }
+        if (!netsBySize.empty()) std::cout << "\n  ";
+        std::cout << "]";
+
+        if (unconnected > 0)
+            std::cout << ",\n  \"unconnected_parts\": " << unconnected;
+
+        std::cout << "\n}\n";
+
     } else {
-        std::cout << "parts : " << np << "\n"
-                  << "nets  : " << nn << "\n";
+        std::cout << "parts : " << m.parts.size() << "\n";
+        std::cout << "nets  : " << m.nets.size() << "\n";
+
+        // MCUs
+        if (!mcuMap.empty()) {
+            std::cout << "\nmcus\n";
+            for (const auto& [ref, def] : mcuMap) {
+                std::string value;
+                auto it = m.parts.find(ref);
+                if (it != m.parts.end()) value = it->second.value;
+                std::cout << "  " << ref;
+                if (!value.empty()) std::cout << "  " << value;
+                std::cout << "  (" << def.pins.size() << " signals mapped)\n";
+            }
+        }
+
+        // Part types
+        std::cout << "\npart types\n";
+        for (const auto& [pfx, refs] : byPrefix) {
+            std::cout << "  " << std::left << std::setw(8) << pfx
+                      << " : " << std::right << std::setw(4) << refs.size();
+            if (refs.size() <= 5) {
+                std::cout << "  (";
+                for (size_t i = 0; i < refs.size(); ++i) {
+                    if (i) std::cout << "  ";
+                    std::cout << refs[i];
+                }
+                std::cout << ")";
+            }
+            std::cout << "\n";
+        }
+
+        // Power rails
+        if (!powerRails.empty()) {
+            std::cout << "\npower rails\n  ";
+            for (size_t i = 0; i < powerRails.size(); ++i) {
+                if (i) std::cout << "  ";
+                std::cout << powerRails[i];
+            }
+            std::cout << "\n";
+        }
+
+        // Top nets by connection count
+        if (!netsBySize.empty()) {
+            std::cout << "\ntop nets by connections\n";
+            for (const auto& [count, name] : netsBySize) {
+                std::cout << "  " << std::left << std::setw(24) << name
+                          << " : " << count << " pins\n";
+            }
+        }
+
+        if (unconnected > 0)
+            std::cout << "\nunconnected parts : " << unconnected << "\n";
     }
     return true;
 }
