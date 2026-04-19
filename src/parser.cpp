@@ -58,31 +58,6 @@ static std::string extractField(const std::string& line,
 }
 
 // ---------------------------------------------------------------------------
-// findFile
-// ---------------------------------------------------------------------------
-
-std::string findFile(const std::string& dir, const std::string& prefix) {
-    std::string best;
-    std::error_code ec;
-    for (auto& entry : fs::directory_iterator(dir, ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string fname = entry.path().filename().string();
-        if (fname.size() >= prefix.size() &&
-            fname.substr(0, prefix.size()) == prefix) {
-            if (best.empty() || fname > best) {
-                best = fname;
-            }
-        }
-    }
-    if (ec) {
-        std::cerr << "Warning: error reading directory '" << dir
-                  << "': " << ec.message() << "\n";
-    }
-    if (best.empty()) return {};
-    return dir + "/" + best;
-}
-
-// ---------------------------------------------------------------------------
 // parsePartList
 // ---------------------------------------------------------------------------
 //
