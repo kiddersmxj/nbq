@@ -977,7 +977,8 @@ bool cmd_signal(const std::string& mcuMapFile, const std::string& query,
 // ---------------------------------------------------------------------------
 
 bool cmd_walk(const Model& m, const std::string& startRef,
-              int maxDepth, const std::string& viaNet, bool jsonMode) {
+              int maxDepth, const std::string& viaNet,
+              bool includePowerNets, bool jsonMode) {
     if (m.parts.find(startRef) == m.parts.end()) {
         if (jsonMode) return jsonError("part not found: " + startRef);
         std::cerr << "error: part not found: " << startRef << "\n";
@@ -1018,6 +1019,8 @@ bool cmd_walk(const Model& m, const std::string& startRef,
         std::map<std::string, std::string> neighbours;
         for (const auto& pe : pit->second) {
             if (!viaNet.empty() && pe.net != viaNet) continue;
+            // When --via names a net explicitly the power filter doesn't apply.
+            if (viaNet.empty() && !includePowerNets && isRailNet(pe.net)) continue;
             auto nit = m.nets.find(pe.net);
             if (nit == m.nets.end()) continue;
             for (const auto& mb : nit->second.members) {

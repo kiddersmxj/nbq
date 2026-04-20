@@ -270,6 +270,74 @@ connected: IC4
 
 ---
 
+### `walk <ref> [--depth N] [--via <net>] [--power-nets]`
+
+Perform a deterministic breadth-first traversal of the board connectivity
+graph starting from a part ref. Returns traversal structure only — use `part`
+or `connected` on individual results to inspect them in detail.
+
+```
+nbq walk IC5
+nbq walk IC5 --depth 2
+nbq walk IC5 --via SDA
+nbq walk IC5 --power-nets
+nbq --json walk IC5
+```
+
+Power/rail nets (GND, VCC, 3V3, VBUS, etc.) are **excluded by default** to
+prevent shared power rails from collapsing unrelated parts into a single hop.
+Pass `--power-nets` to include them.
+
+`--depth N` caps traversal at N hops. `--via <net>` restricts traversal so
+that only connections through the named net are followed; power net filtering
+does not apply when `--via` is active.
+
+Fails with exit 1 if the start ref does not exist, or if `--via` names a net
+that is not in the netlist.
+
+**Text output**
+```
+walk: IC5
+depth: 2
+
+0:
+  IC5
+
+1:
+  IC1
+  IC3
+  R6
+
+2:
+  IC2
+```
+
+**JSON output**
+```json
+{
+  "start": "IC5",
+  "depth": 2,
+  "visited": [
+    {"ref":"IC5","distance":0},
+    {"ref":"IC1","distance":1,"via_net":"SCL","from":"IC5"},
+    {"ref":"IC3","distance":1,"via_net":"SCL","from":"IC5"},
+    {"ref":"R6","distance":1,"via_net":"SCL","from":"IC5"},
+    {"ref":"IC2","distance":2,"via_net":"NET_IC1_IC2","from":"IC1"}
+  ]
+}
+```
+
+Every non-start entry includes `via_net` (the net through which the node was
+first reached) and `from` (the ref of the node that discovered it).
+
+When `--via <net>` is used the JSON also includes a top-level `"via_net"` key:
+
+```json
+{ "start":"IC5", "depth":1, "via_net":"SDA", "visited": [...] }
+```
+
+---
+
 ### `compare <ref1> <ref2>`
 
 Compare two parts by their net sets.
