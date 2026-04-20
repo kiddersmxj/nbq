@@ -50,6 +50,7 @@ nbq -v | --version
 | `net` | `<name>` | All members of a net |
 | `pin` | `<ref> <pad>` | Resolve a pin to its net and all peers |
 | `connected` | `<ref>` | First-hop connections for every pin on a part |
+| `walk` | `<ref> [--depth N] [--via <net>] [--power-nets]` | BFS traversal from a part ref |
 | `compare` | `<ref1> <ref2>` | Shared and differing nets between two parts |
 
 All commands support `--json` for structured, machine-readable output.
@@ -64,9 +65,14 @@ nbq net 3V3                    # all members of the 3V3 net
 nbq pin IC1 28                 # resolve pad 28 → net + peers
 nbq pin IC1 VDD                # same, matched by pin name
 nbq connected IC4              # first-hop topology for IC4
+nbq walk IC5                   # BFS from IC5 (power nets excluded by default)
+nbq walk IC5 --depth 2         # limit to 2 hops
+nbq walk IC5 --via SDA         # only traverse connections on SDA
+nbq walk IC5 --power-nets      # include power/rail nets
 nbq compare IC5 IC6            # diff two parts by net sets
 nbq search SDA                 # find SDA across parts and nets
 nbq --json summary             # JSON output
+nbq --json walk IC5            # JSON traversal with via_net and from fields
 nbq --json connected IC1       # JSON for agent consumption
 ```
 
@@ -76,7 +82,7 @@ nbq --json connected IC1       # JSON for agent consumption
 
 - **Deterministic ordering**: parts by ref, nets by name, members by (part, pad) — pads sorted numerically where applicable
 - **No semantic inference**: outputs are grounded strictly in the input files
-- **No recursive expansion**: first-hop relationships only
+- **No recursive expansion**: `connected` and `net` are first-hop only; `walk` provides explicit BFS traversal
 - **Exact matching for `pin`**: exact pad → exact pin name → case-insensitive fallback; no fuzzy matching
 
 ---
