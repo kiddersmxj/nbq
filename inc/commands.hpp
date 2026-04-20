@@ -36,6 +36,10 @@ bool cmd_connected(const Model& m, const std::string& ref, bool jsonMode);
 bool cmd_compare  (const Model& m, const std::string& ref1,
                    const std::string& ref2, bool jsonMode);
 
+// maxDepth < 0 = unlimited; viaNet = "" = all nets.
+bool cmd_walk     (const Model& m, const std::string& startRef,
+                   int maxDepth, const std::string& viaNet, bool jsonMode);
+
 // ---------------------------------------------------------------------------
 // MCU signal mapping commands
 //

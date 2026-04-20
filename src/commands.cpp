@@ -2,6 +2,7 @@
 #include "../inc/mcu.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <set>
@@ -967,6 +968,114 @@ bool cmd_signal(const std::string& mcuMapFile, const std::string& query,
                   << "pad         : " << foundPin->pad         << "\n"
                   << "silicon_pin : " << foundPin->silicon_pin << "\n"
                   << "net         : " << foundPin->net         << "\n";
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// cmd_walk
+// ---------------------------------------------------------------------------
+
+bool cmd_walk(const Model& m, const std::string& startRef,
+              int maxDepth, const std::string& viaNet, bool jsonMode) {
+    if (m.parts.find(startRef) == m.parts.end()) {
+        if (jsonMode) return jsonError("part not found: " + startRef);
+        std::cerr << "error: part not found: " << startRef << "\n";
+        return false;
+    }
+    if (!viaNet.empty() && m.nets.find(viaNet) == m.nets.end()) {
+        if (jsonMode) return jsonError("net not found: " + viaNet);
+        std::cerr << "error: net not found: " << viaNet << "\n";
+        return false;
+    }
+
+    struct WalkNode {
+        std::string ref;
+        int         distance;
+        std::string via_net;   // net through which this node was first reached
+        std::string from_ref;  // parent ref (empty for start)
+    };
+
+    std::vector<WalkNode> result;
+    std::set<std::string> visited;
+    std::deque<WalkNode>  queue;
+
+    visited.insert(startRef);
+    queue.push_back({startRef, 0, "", ""});
+
+    while (!queue.empty()) {
+        WalkNode node = queue.front();
+        queue.pop_front();
+        result.push_back(node);
+
+        if (maxDepth >= 0 && node.distance >= maxDepth) continue;
+
+        auto pit = m.partPins.find(node.ref);
+        if (pit == m.partPins.end()) continue;
+
+        // Collect neighbours sorted by ref for determinism within each expansion.
+        // Maps neighbour ref → (via_net) for its first discovered net.
+        std::map<std::string, std::string> neighbours;
+        for (const auto& pe : pit->second) {
+            if (!viaNet.empty() && pe.net != viaNet) continue;
+            auto nit = m.nets.find(pe.net);
+            if (nit == m.nets.end()) continue;
+            for (const auto& mb : nit->second.members) {
+                if (mb.part == node.ref) continue;
+                if (visited.count(mb.part)) continue;
+                neighbours.emplace(mb.part, pe.net); // emplace keeps first insertion
+            }
+        }
+
+        for (const auto& [nref, net] : neighbours) {
+            if (visited.insert(nref).second)
+                queue.push_back({nref, node.distance + 1, net, node.ref});
+        }
+    }
+
+    // Sort by (distance, ref) for fully deterministic output.
+    std::stable_sort(result.begin(), result.end(),
+        [](const WalkNode& a, const WalkNode& b) {
+            return a.distance != b.distance ? a.distance < b.distance
+                                            : a.ref < b.ref;
+        });
+
+    int maxReached = result.empty() ? 0 : result.back().distance;
+
+    if (jsonMode) {
+        std::cout << "{\n"
+                  << "  \"start\":" << jsonStr(startRef) << ",\n"
+                  << "  \"depth\":" << maxReached << ",\n";
+        if (!viaNet.empty())
+            std::cout << "  \"via_net\":" << jsonStr(viaNet) << ",\n";
+        std::cout << "  \"visited\": [\n";
+        for (size_t i = 0; i < result.size(); ++i) {
+            const auto& n = result[i];
+            std::cout << "    {"
+                      << "\"ref\":"      << jsonStr(n.ref)      << ","
+                      << "\"distance\":" << n.distance;
+            if (!n.via_net.empty())
+                std::cout << ",\"via_net\":" << jsonStr(n.via_net)
+                          << ",\"from\":"    << jsonStr(n.from_ref);
+            std::cout << "}";
+            if (i + 1 < result.size()) std::cout << ",";
+            std::cout << "\n";
+        }
+        std::cout << "  ]\n}\n";
+    } else {
+        std::cout << "walk: " << startRef << "\n"
+                  << "depth: " << maxReached << "\n";
+        if (!viaNet.empty())
+            std::cout << "via: " << viaNet << "\n";
+
+        int curLevel = -1;
+        for (const auto& n : result) {
+            if (n.distance != curLevel) {
+                curLevel = n.distance;
+                std::cout << "\n" << curLevel << ":\n";
+            }
+            std::cout << "  " << n.ref << "\n";
+        }
     }
     return true;
 }
