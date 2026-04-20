@@ -791,6 +791,23 @@ int main(int argc, char** argv) {
             std::string query = args.empty() ? "" : args[0];
             ok = cmd_signal(McuHalPath, query, jsonMode);
 
+        } else if (cmd == "walk") {
+            if (args.empty()) { dieUsage("walk requires a ref"); return EXIT_FAILURE; }
+            std::string startRef = args[0];
+            int maxDepth = -1;
+            std::string viaNet;
+            for (size_t i = 1; i < args.size(); ++i) {
+                if (args[i] == "--depth" && i + 1 < args.size()) {
+                    try { maxDepth = std::stoi(args[++i]); }
+                    catch (...) { dieUsage("--depth requires an integer"); return EXIT_FAILURE; }
+                } else if (args[i] == "--via" && i + 1 < args.size()) {
+                    viaNet = args[++i];
+                } else {
+                    dieUsage("unknown walk option: " + args[i]); return EXIT_FAILURE;
+                }
+            }
+            ok = cmd_walk(model, startRef, maxDepth, viaNet, jsonMode);
+
         } else {
             dieUsage("unknown command: " + cmd);
             return EXIT_FAILURE;
