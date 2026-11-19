@@ -1,0 +1,35 @@
+{
+  "id": "logo-002",
+  "state": "approved",
+  "image": "approved/logo.png",
+  "slug": "logo",
+  "created": "2026-11-19T22:47:03+00:00",
+  "request": "An app icon seen small, 64px on a grid. A rounded square filled with solder-mask green. On it, three round copper pads, each joined by a thick copper trace to one central junction, so all three sit on a single net. At the junction is a round copper node with a bold question mark cut out of it in mask green. Simple, centred, generous margins, nothing else.",
+  "prompt": "Create an image.\n\nArtwork for nbq: nbq: a command-line tool that answers exact questions about a printed circuit board's parts, pins and nets, for Max and his agents\n\nStyle: Flat, clean PCB artwork: copper traces and pads on solder-mask green, like a close-up of a real board drawn as a simple vector icon.\n\nRules:\n- Copper is the only foreground colour on the green mask, with at most a lighter copper highlight\n- Thick, simple shapes that read at 64px\n- Traces run at 0 and 45 degree angles like real PCB routing\n\nAvoid: text or letters other than a single question mark when asked; photographic texture or noise; drop shadows and gradients; components with legs, chips with many pins, clutter.\n\nPalette (use these colours): mask #1F5A3A, mask_dark #143D27, copper #C87533, copper_light #E3A061.\n\nRequest: An app icon seen small, 64px on a grid. A rounded square filled with solder-mask green. On it, three round copper pads, each joined by a thick copper trace to one central junction, so all three sit on a single net. At the junction is a round copper node with a bold question mark cut out of it in mask green. Simple, centred, generous margins, nothing else.\n\nMake it square (1:1). Reply with the image only.",
+  "provider": "chatgpt",
+  "model": "chatgpt",
+  "params": {
+    "size": "1K",
+    "aspect": "1:1",
+    "quality": "medium",
+    "transparent": false
+  },
+  "refs": [],
+  "parent": null,
+  "cost_usd": 0.0,
+  "model_text": null,
+  "chat": "https://chatgpt.com/c/6aff7c52-56c8-83ed-b6c2-ae24707351ee",
+  "jobs": [
+    "j_2db935a3cf2c42cc",
+    "j_630102ff040e1e9f"
+  ],
+  "by": "kidders@mxj-arch-2",
+  "asset": "logo",
+  "approved": {
+    "at": "2026-11-19T22:47:13+00:00",
+    "by": "kidders@mxj-arch-2 (no terminal)",
+    "placed": [],
+    "note": null,
+    "ref": true
+  }
+}

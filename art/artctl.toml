@@ -1,0 +1,49 @@
+# artctl brand kit. See SPEC.md in the artctl repo for every field.
+name = "nbq"
+# One line: what the product is and who it is for. Sent with every request.
+description = "nbq: a command-line tool that answers exact questions about a printed circuit board's parts, pins and nets, for Max and his agents"
+
+[style]
+# How everything should look, in a sentence or two.
+summary = "Flat, clean PCB artwork: copper traces and pads on solder-mask green, like a close-up of a real board drawn as a simple vector icon."
+# Hard rules the model must follow.
+rules = ["Copper is the only foreground colour on the green mask, with at most a lighter copper highlight", "Thick, simple shapes that read at 64px", "Traces run at 0 and 45 degree angles like real PCB routing"]
+# Things that must never appear.
+avoid = ["text or letters other than a single question mark when asked", "photographic texture or noise", "drop shadows and gradients", "components with legs, chips with many pins, clutter"]
+
+[palette]
+# name = "#RRGGBB"
+mask = "#1F5A3A"
+mask_dark = "#143D27"
+copper = "#C87533"
+copper_light = "#E3A061"
+
+[generate]
+provider = "chatgpt"  # chatgpt (free, via headfull), gemini, openai (paid APIs), mock (offline)
+# chatgpt takes up to 10 images per request (refs plus any --from image).
+size = "1K"           # gemini: 512, 1K, 2K, 4K. openai: 1K, or WxH
+aspect = "1:1"
+quality = "medium"    # openai only: low, medium, high
+
+[chatgpt]
+# ChatGPT project URL for this brand. Every image is made in a chat inside it,
+# so the brand's work stays together and out of the main ChatGPT history.
+# "none" for a one-off with no project; left empty, gen warns.
+project = "none"
+
+[budget]
+per_call_usd = 1.00
+daily_usd = 5.00
+
+[review]
+# agent: anyone may approve. human: approval needs a person at a terminal or
+# a click on the review page.
+mode = "agent"
+
+# Reference images. always = true attaches it to every generation.
+# role is one of: logo, mascot, example, reference.
+
+[[refs]]
+path = "approved/logo.png"
+role = "example"
+always = true
