@@ -5,11 +5,11 @@ description = "nbq: a command-line tool that answers exact questions about a pri
 
 [style]
 # How everything should look, in a sentence or two.
-summary = "Flat, clean PCB artwork: copper traces and pads on solder-mask green, like a close-up of a real board drawn as a simple vector icon."
+summary = "Flat, clean close-up of a real printed circuit board drawn as a simple vector icon: thin copper traces, rectangular SMD pads and small vias on solder-mask green."
 # Hard rules the model must follow.
-rules = ["Copper is the only foreground colour on the green mask, with at most a lighter copper highlight", "Thick, simple shapes that read at 64px", "Traces run at 0 and 45 degree angles like real PCB routing"]
+rules = ["Copper is the only foreground colour on the green mask, with at most a lighter copper highlight", "Simple enough to read at 64px, but it must look like a real board, not a diagram", "Traces run at 0 and 45 degree angles like real PCB routing"]
 # Things that must never appear.
-avoid = ["text or letters other than a single question mark when asked", "photographic texture or noise", "drop shadows and gradients", "components with legs, chips with many pins, clutter"]
+avoid = ["any text, letters or glyphs, including question marks", "ball-and-stick or molecule-like shapes, round nodes joined by spokes", "photographic texture or noise", "drop shadows and gradients", "components with legs, chips with many pins, clutter"]
 
 [palette]
 # name = "#RRGGBB"
@@ -38,12 +38,7 @@ daily_usd = 5.00
 [review]
 # agent: anyone may approve. human: approval needs a person at a terminal or
 # a click on the review page.
-mode = "agent"
+mode = "human"
 
 # Reference images. always = true attaches it to every generation.
 # role is one of: logo, mascot, example, reference.
-
-[[refs]]
-path = "approved/logo.png"
-role = "example"
-always = true
